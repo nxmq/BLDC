@@ -15,5 +15,5 @@ package bldc
 
 import chisel3.stage.{ChiselStage, ChiselGeneratorAnnotation}
 object Generate extends App {
-    (new ChiselStage).emitVerilog(new QuadratureEncoder(16,50,50))
+    (new ChiselStage).emitVerilog(new SpaceVectorPWM())
 }

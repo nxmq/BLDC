@@ -16,14 +16,15 @@ package bldc
 
 import chisel3._
 import chisel3.experimental.FixedPoint
+import chisel3.util.experimental.loadMemoryFromFile
+import firrtl.annotations.MemoryLoadFileType
 
 class SpaceVectorPWM extends Module {
   val counterSize: Int = 16
-  val cntMid: UInt = ((1 << counterSize-1) -1).U(counterSize.W)
-  val io = IO(new Bundle {
-    //MODULATION INDEX
-    val modidx: FixedPoint = Input(FixedPoint(12.W,10.BP))
+  val cntMid: UInt = ((1 << counterSize - 1) - 1).U(counterSize.W)
+  val cntMax: UInt = ((1 << counterSize) - 1).U(counterSize.W)
 
+  val io = IO(new Bundle {
     //DC-LINK NORMALIZED TARGET VOLTAGE (0-hFFFF mapped to 0-1)
     val voltage: UInt = Input(UInt(16.W))
     //TARGET PHASE (0-1536  mapped to 0-2PI)
@@ -39,37 +40,81 @@ class SpaceVectorPWM extends Module {
     val vLowOn: Bool = Output(Bool())
     val wHighOn: Bool = Output(Bool())
     val wLowOn: Bool = Output(Bool())
+
+    //DEBUG OUTPUTS
+    val uDuty: UInt = Output(UInt(counterSize.W))
+    val vDuty: UInt = Output(UInt(counterSize.W))
+    val wDuty: UInt = Output(UInt(counterSize.W))
+    val dx: UInt = Output(UInt(16.W))
+    val dy: UInt = Output(UInt(16.W))
+    val phaseSextant: UInt = Output(UInt(3.W))
+    val phaseLocation: UInt = Output(UInt(8.W))
+    val curMagX: UInt = Output(UInt(16.W))
+    val curMagY: UInt = Output(UInt(16.W))
   })
+  val startLoadReg: Bool = RegInit(true.B)
+  val phaseLocation: UInt = RegInit(0.U(8.W))
 
-  def genPhasorTable(): Vec[UInt] = {
-    VecInit((0 to 256).map {
-      v => {
-        val t1 = v * (math.Pi / (3.0 * 256.0))
-        val t2 = (math.Pi / (3.0)) - t1
-        val res1 = math.round(65535*((3 * math.cos(t1) - math.sqrt(3)*math.sin(t1))/3.0)).U(16.W)
-        val res2 = math.round(65535*((3 * math.cos(t2) - math.sqrt(3)*math.sin(t2))/3.0)).U(16.W)
-        res1 ## res2
-      }
-    })
-  }
+//  def genPhasorTableX(): Vec[UInt] = {
+//    VecInit((0 to 256).map {
+//      v => {
+//        val t1 = v * (math.Pi / (3.0 * 256.0))
+//        val t2 = (math.Pi / (3.0)) - t1
+//         math.round(65535*((3 * math.cos(t1) - math.sqrt(3)*math.sin(t1))/3.0)).U(16.W)
+//      }
+//    })
+//  }
+//  def genPhasorTableY(): Vec[UInt] = {
+//    VecInit((0 to 256).map {
+//      v => {
+//        val t = (math.Pi / (3.0)) -  v * (math.Pi / (3.0 * 256.0))
+//        println(math.round(65535*((3 * math.cos(t) - math.sqrt(3)*math.sin(t))/3.0)).U(16))
+//        math.round(65535*((3 * math.cos(t) - math.sqrt(3)*math.sin(t))/3.0)).U(16.W)
+//
+//      }
+//    })
+//  }
 
-  val basis1: UInt = Reg(UInt(3.W))
-  val basis2: UInt = Reg(UInt(3.W))
-  val phasorMagTable: Vec[UInt] = genPhasorTable()
+  val phasorMagTableX: SyncReadMem[UInt] = SyncReadMem(256, UInt(16.W))
+  loadMemoryFromFile(phasorMagTableX, "/Users/nicolasmachado/IdeaProjects/BLDC/phasormagx.txt", MemoryLoadFileType.Hex)
+  val phasorMagTableY: SyncReadMem[UInt] = SyncReadMem(256, UInt(16.W))
+  loadMemoryFromFile(phasorMagTableY, "/Users/nicolasmachado/IdeaProjects/BLDC/phasormagy.txt", MemoryLoadFileType.Hex)
   val counter: UpDownCounter = Module(new UpDownCounter(counterSize))
-  val reloadSig: Bool = counter.io.dir && !RegNext(counter.io.dir)
-  val uDuty: UInt = Reg(UInt(counterSize.W))
-  val vDuty: UInt = Reg(UInt(counterSize.W))
-  val wDuty: UInt = Reg(UInt(counterSize.W))
-  when(reloadSig) {
-    val phaseSextant : UInt = ((io.phase >> 1) * 12289.U) >> 26
-    val phaseLocation : UInt = io.phase - (phaseSextant * 10922.U)
-    val dx = (phasorMagTable(phaseLocation).head(16).asUInt() * io.voltage).head(16)
-    val dy = (phasorMagTable(phaseLocation).tail(16).asUInt() * io.voltage).head(16)
+  val reloadSig: Bool = (counter.io.dir && !RegNext(counter.io.dir)) || startLoadReg
+  val uDuty: UInt = Reg(UInt(16.W))
+  val vDuty: UInt = Reg(UInt(16.W))
+  val wDuty: UInt = Reg(UInt(16.W))
+  val phaseSextant : UInt = Reg(UInt(3.W))
+  val curMagX: UInt = RegInit(0.U(16.W))
+  val curMagY: UInt = RegInit(0.U(16.W))
+  val dx: UInt = RegInit(0.U(16.W))
+  val dy: UInt = RegInit(0.U(16.W))
 
+  io.dx := dx
+  io.dy := dy
+  io.uDuty := uDuty
+  io.vDuty := vDuty
+  io.wDuty := wDuty
+  io.phaseSextant := phaseSextant
+  io.phaseLocation := phaseLocation
+  io.curMagX := curMagX
+  io.curMagY := curMagY
+
+  when(counter.io.cnt === 0.U) {
+    startLoadReg := false.B
+    phaseSextant := (((io.phase >> 1) * 12289.U) >> 26)
+    phaseLocation := (io.phase - (phaseSextant * 10922.U)).head(8)
+  }
+  .elsewhen(counter.io.cnt === 1.U && counter.io.dir) {
+    curMagX := phasorMagTableX.read(phaseLocation)
+    curMagY := phasorMagTableY.read(phaseLocation)
+  }
+  .elsewhen(counter.io.cnt === 2.U && counter.io.dir) {
+    dx := (curMagX * io.voltage).head(16)
+    dy := (curMagY * io.voltage).head(16)
+  }
+  .elsewhen(counter.io.cnt === 3.U && counter.io.dir) {
     when(phaseSextant === 0.U) {
-      basis1 := 1.U
-      basis2 := 3.U
       when(io.rotationDirection) {
         uDuty := (cntMid - dx - dy) >> 1
         vDuty := (cntMid + dx - dy) >> 1
@@ -80,8 +125,6 @@ class SpaceVectorPWM extends Module {
         wDuty := (cntMid - dx + dy) >> 1
       }
     }.elsewhen(phaseSextant === 1.U) {
-      basis1 := 3.U
-      basis2 := 2.U
       when(io.rotationDirection) {
         uDuty := (cntMid - dx + dy) >> 1
         vDuty := (cntMid - dx - dy) >> 1
@@ -92,8 +135,6 @@ class SpaceVectorPWM extends Module {
         wDuty := (cntMid - dx - dy) >> 1
       }
     }.elsewhen(phaseSextant === 2.U) {
-      basis1 := 2.U
-      basis2 := 6.U
       when(io.rotationDirection) {
         uDuty := (cntMid + dx + dy) >> 1
         vDuty := (cntMid - dx - dy) >> 1
@@ -104,8 +145,6 @@ class SpaceVectorPWM extends Module {
         wDuty := (cntMid + dx - dy) >> 1
       }
     }.elsewhen(phaseSextant === 3.U) {
-      basis1 := 6.U
-      basis2 := 4.U
       when(io.rotationDirection) {
         uDuty := (cntMid + dx + dy) >> 1
         vDuty := (cntMid - dx + dy) >> 1
@@ -116,8 +155,6 @@ class SpaceVectorPWM extends Module {
         wDuty := (cntMid + dx - dy) >> 1
       }
     }.elsewhen(phaseSextant === 4.U) {
-      basis1 := 4.U
-      basis2 := 5.U
       when(io.rotationDirection) {
         uDuty := (cntMid + dx - dy) >> 1
         vDuty := (cntMid + dx + dy) >> 1
@@ -128,8 +165,6 @@ class SpaceVectorPWM extends Module {
         wDuty := (cntMid + dx + dy) >> 1
       }
     }.elsewhen(phaseSextant === 5.U) {
-      basis1 := 5.U
-      basis2 := 1.U
       when(io.rotationDirection) {
         uDuty := (cntMid - dx - dy) >> 1
         vDuty := (cntMid + dx + dy) >> 1
@@ -138,16 +173,16 @@ class SpaceVectorPWM extends Module {
         uDuty := (cntMid + dx - dy) >> 1
         vDuty := (cntMid - dx - dy) >> 1
         wDuty := (cntMid + dx + dy) >> 1
-      }    }
+      }
+    }
 
   }
-
   counter.io.en := true.B
-  io.uHighOn :=  counter.io.cnt > uDuty
+  io.uHighOn := counter.io.cnt > uDuty
   io.uLowOn := counter.io.cnt <= uDuty
   io.vHighOn :=  counter.io.cnt > vDuty
   io.vLowOn := counter.io.cnt <= vDuty
-  io.wHighOn :=  counter.io.cnt > wDuty
+  io.wHighOn := counter.io.cnt > wDuty
   io.wLowOn := counter.io.cnt <= wDuty
 
 }
