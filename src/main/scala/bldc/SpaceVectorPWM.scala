@@ -42,15 +42,15 @@ class SpaceVectorPWM extends Module {
     val wLowOn: Bool = Output(Bool())
 
     //DEBUG OUTPUTS
-    val uDuty: UInt = Output(UInt(counterSize.W))
-    val vDuty: UInt = Output(UInt(counterSize.W))
-    val wDuty: UInt = Output(UInt(counterSize.W))
-    val dx: UInt = Output(UInt(16.W))
-    val dy: UInt = Output(UInt(16.W))
-    val phaseSextant: UInt = Output(UInt(3.W))
-    val phaseLocation: UInt = Output(UInt(8.W))
-    val curMagX: UInt = Output(UInt(16.W))
-    val curMagY: UInt = Output(UInt(16.W))
+  //    val uDuty: UInt = Output(UInt(counterSize.W))
+  //    val vDuty: UInt = Output(UInt(counterSize.W))
+  //    val wDuty: UInt = Output(UInt(counterSize.W))
+  //    val dx: UInt = Output(UInt(16.W))
+  //    val dy: UInt = Output(UInt(16.W))
+  //    val phaseSextant: UInt = Output(UInt(3.W))
+  //    val phaseLocation: UInt = Output(UInt(8.W))
+  //    val curMagX: UInt = Output(UInt(16.W))
+  //    val curMagY: UInt = Output(UInt(16.W))
   })
 
 
@@ -69,15 +69,15 @@ class SpaceVectorPWM extends Module {
   val dx: UInt = RegInit(0.U(16.W))
   val dy: UInt = RegInit(0.U(16.W))
 
-  io.uDuty := uDuty
-  io.vDuty := vDuty
-  io.wDuty := wDuty
-  io.dx := dx
-  io.dy := dy
-  io.phaseSextant := phaseSextant
-  io.phaseLocation := phaseLocation
-  io.curMagX := curMagX
-  io.curMagY := curMagY
+//  io.uDuty := uDuty
+//  io.vDuty := vDuty
+//  io.wDuty := wDuty
+//  io.dx := dx
+//  io.dy := dy
+//  io.phaseSextant := phaseSextant
+//  io.phaseLocation := phaseLocation
+//  io.curMagX := curMagX
+//  io.curMagY := curMagY
 
   when(counter.io.cnt === 0.U) {
     phaseLocation := io.phase(7,0)
