@@ -15,6 +15,7 @@
 package bldc
 
 import chisel3._
+import chisel3.util.log2Ceil
 
 class QuadratureEncoder(counterSize: Int, edgeDebounceClocks: Int, indexDebounceClocks: Int) extends Module {
   val io = IO(new Bundle {
@@ -30,8 +31,8 @@ class QuadratureEncoder(counterSize: Int, edgeDebounceClocks: Int, indexDebounce
   val bNew: Vec[Bool] = Reg(Vec(2,Bool()))
   val iPrev: Bool = Reg(Bool())
   val iNew: Vec[Bool] = Reg(Vec(2,Bool()))
-  val edgeDebounceCounter: UInt = Reg(UInt(util.log2Ceil(edgeDebounceClocks).W))
-  val indexDebounceCounter: UInt = Reg(UInt(util.log2Ceil(indexDebounceClocks).W))
+  val edgeDebounceCounter: UInt = Reg(UInt(log2Ceil(edgeDebounceClocks).W))
+  val indexDebounceCounter: UInt = Reg(UInt(log2Ceil(indexDebounceClocks).W))
   val position: UInt = Reg(UInt(counterSize.W))
   val dir: Bool = Reg(Bool())
   io.dir := dir

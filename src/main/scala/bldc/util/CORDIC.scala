@@ -11,9 +11,12 @@
 //LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 //OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 //PERFORMANCE OF THIS SOFTWARE.
-package bldc
+package bldc.util
 
-import chisel3.stage.{ChiselStage, ChiselGeneratorAnnotation}
-object Generate extends App {
-    (new ChiselStage).emitVerilog(new SpaceVectorPWM())
+import chisel3._
+
+class CORDIC extends Module {
+  var io = IO(new Bundle{
+
+  })
 }

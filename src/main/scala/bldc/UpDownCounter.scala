@@ -23,7 +23,7 @@ class UpDownCounter(n: Int, min: Int = 0, maxv: Option[Int] = None) extends Modu
     val dir: Bool = Output(Bool())
   })
   val dir: Bool = RegInit(true.B)
-  val cnt: UInt = RegInit(0.U(n.W))
+  val cnt: UInt = RegInit(min.U(n.W))
   val max: Int = maxv.getOrElse((1 << n) - 1)
   when(io.en) {
     val next_cnt = Mux(dir, cnt + 1.U, cnt - 1.U)

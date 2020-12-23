@@ -21,14 +21,14 @@ import firrtl.annotations.MemoryLoadFileType
 
 class SpaceVectorPWM extends Module {
   val counterSize: Int = 16
-  val cntMid: UInt = ((1 << counterSize - 1) - 1).U(counterSize.W)
-  val cntMax: UInt = ((1 << counterSize) - 1).U(counterSize.W)
+  val cntMid: UInt = ((1 << counterSize - 1) - 1).U((counterSize+1).W)
+  val cntMax: UInt = ((1 << counterSize) - 1).U((counterSize+1).W)
 
   val io = IO(new Bundle {
     //DC-LINK NORMALIZED TARGET VOLTAGE (0-hFFFF mapped to 0-1)
     val voltage: UInt = Input(UInt(16.W))
     //TARGET PHASE (0-1536  mapped to 0-2PI)
-    val phase: UInt = Input(UInt(16.W))
+    val phase: UInt = Input(UInt(11.W))
 
     //DIRECTION OF ROTATION (TRUE=CW, FALSE=CCW)
     val rotationDirection: Bool = Input(Bool())
@@ -52,127 +52,105 @@ class SpaceVectorPWM extends Module {
     val curMagX: UInt = Output(UInt(16.W))
     val curMagY: UInt = Output(UInt(16.W))
   })
-  val startLoadReg: Bool = RegInit(true.B)
-  val phaseLocation: UInt = RegInit(0.U(8.W))
 
-//  def genPhasorTableX(): Vec[UInt] = {
-//    VecInit((0 to 256).map {
-//      v => {
-//        val t1 = v * (math.Pi / (3.0 * 256.0))
-//        val t2 = (math.Pi / (3.0)) - t1
-//         math.round(65535*((3 * math.cos(t1) - math.sqrt(3)*math.sin(t1))/3.0)).U(16.W)
-//      }
-//    })
-//  }
-//  def genPhasorTableY(): Vec[UInt] = {
-//    VecInit((0 to 256).map {
-//      v => {
-//        val t = (math.Pi / (3.0)) -  v * (math.Pi / (3.0 * 256.0))
-//        println(math.round(65535*((3 * math.cos(t) - math.sqrt(3)*math.sin(t))/3.0)).U(16))
-//        math.round(65535*((3 * math.cos(t) - math.sqrt(3)*math.sin(t))/3.0)).U(16.W)
-//
-//      }
-//    })
-//  }
 
-  val phasorMagTableX: SyncReadMem[UInt] = SyncReadMem(256, UInt(16.W))
-  loadMemoryFromFile(phasorMagTableX, "/Users/nicolasmachado/IdeaProjects/BLDC/phasormagx.txt", MemoryLoadFileType.Hex)
-  val phasorMagTableY: SyncReadMem[UInt] = SyncReadMem(256, UInt(16.W))
-  loadMemoryFromFile(phasorMagTableY, "/Users/nicolasmachado/IdeaProjects/BLDC/phasormagy.txt", MemoryLoadFileType.Hex)
+  val phasorMagTableX: Mem[UInt] = Mem(256, UInt(16.W))
+  loadMemoryFromFile(phasorMagTableX, "phasormagx.txt", MemoryLoadFileType.Hex)
+  val phasorMagTableY: Mem[UInt] = Mem(256, UInt(16.W))
+  loadMemoryFromFile(phasorMagTableY, "phasormagy.txt", MemoryLoadFileType.Hex)
   val counter: UpDownCounter = Module(new UpDownCounter(counterSize))
-  val reloadSig: Bool = (counter.io.dir && !RegNext(counter.io.dir)) || startLoadReg
-  val uDuty: UInt = Reg(UInt(16.W))
-  val vDuty: UInt = Reg(UInt(16.W))
-  val wDuty: UInt = Reg(UInt(16.W))
-  val phaseSextant : UInt = Reg(UInt(3.W))
+  val uDuty: UInt = RegInit(65535.U(16.W))
+  val vDuty: UInt = RegInit(65535.U(16.W))
+  val wDuty: UInt = RegInit(65535.U(16.W))
+  val phaseSextant : UInt = RegInit(0.U(3.W))
+  val phaseLocation: UInt = RegInit(0.U(8.W))
   val curMagX: UInt = RegInit(0.U(16.W))
   val curMagY: UInt = RegInit(0.U(16.W))
   val dx: UInt = RegInit(0.U(16.W))
   val dy: UInt = RegInit(0.U(16.W))
 
-  io.dx := dx
-  io.dy := dy
   io.uDuty := uDuty
   io.vDuty := vDuty
   io.wDuty := wDuty
+  io.dx := dx
+  io.dy := dy
   io.phaseSextant := phaseSextant
   io.phaseLocation := phaseLocation
   io.curMagX := curMagX
   io.curMagY := curMagY
 
   when(counter.io.cnt === 0.U) {
-    startLoadReg := false.B
-    phaseSextant := (((io.phase >> 1) * 12289.U) >> 26)
-    phaseLocation := (io.phase - (phaseSextant * 10922.U)).head(8)
+    phaseLocation := io.phase(7,0)
+    phaseSextant := io.phase(10,8)
   }
-  .elsewhen(counter.io.cnt === 1.U && counter.io.dir) {
+  when(counter.io.cnt === 1.U && counter.io.dir) {
     curMagX := phasorMagTableX.read(phaseLocation)
     curMagY := phasorMagTableY.read(phaseLocation)
   }
-  .elsewhen(counter.io.cnt === 2.U && counter.io.dir) {
-    dx := (curMagX * io.voltage).head(16)
-    dy := (curMagY * io.voltage).head(16)
+  when(counter.io.cnt === 2.U && counter.io.dir) {
+    dx := (curMagX * io.voltage)(31,16)
+    dy := (curMagY * io.voltage)(31,16)
   }
-  .elsewhen(counter.io.cnt === 3.U && counter.io.dir) {
+  when(counter.io.cnt === 3.U && counter.io.dir) {
     when(phaseSextant === 0.U) {
       when(io.rotationDirection) {
-        uDuty := (cntMid - dx - dy) >> 1
-        vDuty := (cntMid + dx - dy) >> 1
-        wDuty := (cntMid + dx + dy) >> 1
+        uDuty := (cntMax - dx - dy) >> 1
+        vDuty := (cntMax + dx - dy) >> 1
+        wDuty := (cntMax + dx + dy) >> 1
       }.otherwise {
-        uDuty := (cntMid + dx + dy) >> 1
-        vDuty := (cntMid - dx - dy) >> 1
-        wDuty := (cntMid - dx + dy) >> 1
+        uDuty := (cntMax + dx + dy) >> 1
+        vDuty := (cntMax - dx - dy) >> 1
+        wDuty := (cntMax - dx + dy) >> 1
       }
     }.elsewhen(phaseSextant === 1.U) {
       when(io.rotationDirection) {
-        uDuty := (cntMid - dx + dy) >> 1
-        vDuty := (cntMid - dx - dy) >> 1
-        wDuty := (cntMid + dx + dy) >> 1
+        uDuty := (cntMax - dx + dy) >> 1
+        vDuty := (cntMax - dx - dy) >> 1
+        wDuty := (cntMax + dx + dy) >> 1
       }.otherwise {
-        uDuty := (cntMid + dx + dy) >> 1
-        vDuty := (cntMid + dx - dy) >> 1
-        wDuty := (cntMid - dx - dy) >> 1
+        uDuty := (cntMax + dx + dy) >> 1
+        vDuty := (cntMax + dx - dy) >> 1
+        wDuty := (cntMax - dx - dy) >> 1
       }
     }.elsewhen(phaseSextant === 2.U) {
       when(io.rotationDirection) {
-        uDuty := (cntMid + dx + dy) >> 1
-        vDuty := (cntMid - dx - dy) >> 1
-        wDuty := (cntMid + dx - dy) >> 1
+        uDuty := (cntMax + dx + dy) >> 1
+        vDuty := (cntMax - dx - dy) >> 1
+        wDuty := (cntMax + dx - dy) >> 1
       }.otherwise {
-        uDuty := (cntMid - dx + dy) >> 1
-        vDuty := (cntMid + dx + dy) >> 1
-        wDuty := (cntMid + dx - dy) >> 1
+        uDuty := (cntMax - dx + dy) >> 1
+        vDuty := (cntMax + dx + dy) >> 1
+        wDuty := (cntMax + dx - dy) >> 1
       }
     }.elsewhen(phaseSextant === 3.U) {
       when(io.rotationDirection) {
-        uDuty := (cntMid + dx + dy) >> 1
-        vDuty := (cntMid - dx + dy) >> 1
-        wDuty := (cntMid - dx + dy) >> 1
+        uDuty := (cntMax + dx + dy) >> 1
+        vDuty := (cntMax - dx + dy) >> 1
+        wDuty := (cntMax - dx - dy) >> 1
       }.otherwise {
-        uDuty := (cntMid - dx - dy) >> 1
-        vDuty := (cntMid + dx + dy) >> 1
-        wDuty := (cntMid + dx - dy) >> 1
+        uDuty := (cntMax - dx - dy) >> 1
+        vDuty := (cntMax + dx + dy) >> 1
+        wDuty := (cntMax + dx - dy) >> 1
       }
     }.elsewhen(phaseSextant === 4.U) {
       when(io.rotationDirection) {
-        uDuty := (cntMid + dx - dy) >> 1
-        vDuty := (cntMid + dx + dy) >> 1
-        wDuty := (cntMid - dx - dy) >> 1
+        uDuty := (cntMax + dx - dy) >> 1
+        vDuty := (cntMax + dx + dy) >> 1
+        wDuty := (cntMax - dx - dy) >> 1
       }.otherwise {
-        uDuty := (cntMid - dx - dy) >> 1
-        vDuty := (cntMid - dx + dy) >> 1
-        wDuty := (cntMid + dx + dy) >> 1
+        uDuty := (cntMax - dx - dy) >> 1
+        vDuty := (cntMax - dx + dy) >> 1
+        wDuty := (cntMax + dx + dy) >> 1
       }
     }.elsewhen(phaseSextant === 5.U) {
       when(io.rotationDirection) {
-        uDuty := (cntMid - dx - dy) >> 1
-        vDuty := (cntMid + dx + dy) >> 1
-        wDuty := (cntMid - dx + dy) >> 1
+        uDuty := (cntMax - dx - dy) >> 1
+        vDuty := (cntMax + dx + dy) >> 1
+        wDuty := (cntMax - dx + dy) >> 1
       }.otherwise {
-        uDuty := (cntMid + dx - dy) >> 1
-        vDuty := (cntMid - dx - dy) >> 1
-        wDuty := (cntMid + dx + dy) >> 1
+        uDuty := (cntMax + dx - dy) >> 1
+        vDuty := (cntMax - dx - dy) >> 1
+        wDuty := (cntMax + dx + dy) >> 1
       }
     }
 
