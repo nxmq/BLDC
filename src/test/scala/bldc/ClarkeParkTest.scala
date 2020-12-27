@@ -16,33 +16,39 @@ package bldc
 import chisel3._
 import chisel3.iotesters.PeekPokeTester
 import org.scalatest._
+import bldc.util.RotationCordic
 
-class SpaceVectorPWMSpec extends FreeSpec with Matchers {
-  "Initialization works at all" in {
+class ClarkeParkSpec extends FlatSpec with Matchers {
+  behavior of "ClarkePark"
+
+  it should "compute sin and cos properly" in {
     iotesters.Driver.execute(
       args = Array("--backend-name",
-    "verilator",
-    "--generate-vcd-output",
-    "on",
-    "--target-dir",
-    "test_build",
-    "-tn",
-    "test_build",
-    "--no-dce"),
-      dut = () => new SpaceVectorPWM(14)
-    ) { c =>
-      new SpaceVectorPWMTester(c)
-    } should be (true)
+        "verilator",
+        "--generate-vcd-output",
+        "on",
+        "--target-dir",
+        "test_build",
+        "-tn",
+        "test_build",
+        "--no-dce"),dut = () => new ClarkeParkTransform(12,11,14)) { c =>
+      new ClarkeParkTester(c)
+    } should be(true)
   }
 }
 
-class SpaceVectorPWMTester(c: SpaceVectorPWM) extends PeekPokeTester(c) {
-  poke(c.io.voltage,14189)
-  poke(c.io.phase,196)
-  for(i <- 1 to 5) {
-    step((1 << (c.counterSize + 1)) - 12)
-    poke(c.io.phase,196+c.phaseResolution*i)
-    step(12)
+class ClarkeParkTester(c: ClarkeParkTransform) extends PeekPokeTester(c) {
+  System.err.print("cordic gain correction factor is: ")
+  System.err.println(c.outscale)
+  System.err.print("input scaling factor is: ")
+  System.err.println(c.inscale)
+  poke(c.io.iu,531)
+  poke(c.io.iv,126)
+  poke(c.io.phase,1202)
+  poke(c.io.ivalid,true)
+  step(1)
+  for(i <- 0 to c.outBits) {
+    step(1)
   }
-  step((1 << (c.counterSize + 1)) - 12)
+  expect(c.io.ovalid,true.B)
 }

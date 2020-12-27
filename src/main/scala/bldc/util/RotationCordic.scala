@@ -16,7 +16,7 @@ package bldc.util
 import chisel3._
 import chisel3.util._
 
-class CORDIC(inputBits: Int, workingBits: Int, outputBits: Int,phaseBits: Int, stageCount: Int) extends Module {
+class RotationCordic(val inputBits: Int, val workingBits: Int, val outputBits: Int, val phaseBits: Int, val stageCount: Int) extends Module {
   var io = IO(new Bundle{
     val ce: Bool = Input(Bool())
     val ph: UInt = Input(UInt(phaseBits.W))
@@ -28,8 +28,19 @@ class CORDIC(inputBits: Int, workingBits: Int, outputBits: Int,phaseBits: Int, s
     val oaux: Bool = Output(Bool())
   })
 
+  def getCordicGain: Double = {
+    var gain = 1.0
+    for(k <- 0 until stageCount) {
+      var dgain = .0
+      dgain = 1.0 + Math.pow(2.0, -2.0 * (k + 1))
+      dgain = Math.sqrt(dgain)
+      gain = gain * dgain
+    }
+    gain
+  }
+
   def genAngleTable() : Vec[UInt] = {
-    VecInit({(0 to stageCount).map { k =>
+    VecInit({(0 until stageCount).map { k =>
       var x = Math.atan2(1.0,Math.pow(2,k+1))
       x *= (4.0 * (1<<(phaseBits-2))) / (Math.PI * 2.0)
       Math.round(x).U(phaseBits.W)
@@ -40,23 +51,26 @@ class CORDIC(inputBits: Int, workingBits: Int, outputBits: Int,phaseBits: Int, s
   val wx: Vec[SInt] = RegInit(VecInit(Seq.fill(stageCount+1)(0.S(workingBits.W))))
   val wy: Vec[SInt] = RegInit(VecInit(Seq.fill(stageCount+1)(0.S(workingBits.W))))
   val wph: Vec[UInt] = RegInit(VecInit(Seq.fill(stageCount+1)(0.U(phaseBits.W))))
-  val ax: UInt = RegInit(0.U((stageCount+1).W))
+  val aux: UInt = RegInit(0.U((stageCount+1).W))
 
-  val ex: SInt = WireDefault(Cat(io.ix(inputBits-1), io.ix, 0.S((workingBits-inputBits-1))).asSInt())
-  val ey: SInt = WireDefault(Cat(io.iy(inputBits-1), io.iy, 0.S((workingBits-inputBits-1))).asSInt())
+  val ex: SInt = WireDefault(0.S(workingBits.W))
+  val ey: SInt = WireDefault(0.S(workingBits.W))
 
-  val px: SInt = WireDefault(wx(stageCount) + Cat(0.S(outputBits),wx(stageCount)(workingBits-outputBits),Fill(workingBits-outputBits-1,!wx(stageCount)(workingBits-outputBits))).asSInt())
-  val py: SInt = WireDefault(wy(stageCount) + Cat(0.S(outputBits),wy(stageCount)(workingBits-outputBits),Fill(workingBits-outputBits-1,!wy(stageCount)(workingBits-outputBits))).asSInt())
+  val px: SInt = WireDefault(0.S(workingBits.W))
+  val py: SInt = WireDefault(0.S(workingBits.W))
 
-  val ox: SInt = RegNext(px(workingBits-1,workingBits-outputBits).asSInt(),0.S(outputBits).asSInt())
-  val oy: SInt = RegNext(px(workingBits-1,workingBits-outputBits).asSInt(),0.S(outputBits).asSInt())
-  val oaux: Bool = RegNext(ax(stageCount),0.B)
   val angleTable: Vec[UInt] = WireDefault(genAngleTable())
-  io.ox := ox
-  io.oy := oy
-  io.oaux := oaux
+  io.ox := px(workingBits-1,workingBits-outputBits).asSInt()
+  io.oy := py(workingBits-1,workingBits-outputBits).asSInt()
+  io.oaux := aux(stageCount)
 
   when(io.ce) {
+    ex := Cat(io.ix(inputBits - 1).asSInt(), io.ix, 0.S((workingBits - inputBits - 1).W)).asSInt()
+    ey := Cat(io.iy(inputBits-1).asSInt(), io.iy, 0.S((workingBits-inputBits-1).W)).asSInt()
+    px := wx(stageCount) + Cat(0.S(outputBits.W), wx(stageCount)(workingBits-outputBits).asSInt(), Fill(workingBits-outputBits-1,!wx(stageCount)(workingBits-outputBits)).asSInt()).asSInt()
+    py := wy(stageCount) + Cat(0.S(outputBits.W), wy(stageCount)(workingBits-outputBits).asSInt(), Fill(workingBits-outputBits-1,!wy(stageCount)(workingBits-outputBits)).asSInt()).asSInt()
+    aux := aux(stageCount-1,0) ## io.iaux
+
     for(i <- 0 until stageCount) {
       if(i >=workingBits) {
         wx(i+1) := wx(i)
@@ -67,7 +81,7 @@ class CORDIC(inputBits: Int, workingBits: Int, outputBits: Int,phaseBits: Int, s
           wx(i+1) := wx(i)
           wy(i+1) := wy(i)
           wph(i+1) := wph(i)
-        }.elsewhen(wph(i)(phaseBits-1)) {
+        }.elsewhen(wph(i)(phaseBits-1) === 1.U) {
           wx(i+1) := wx(i) + (wy(i)>>(1+i))
           wy(i+1) := wy(i) - (wx(i)>>(1+i))
           wph(i+1) := wph(i) + angleTable(i)
@@ -121,5 +135,7 @@ class CORDIC(inputBits: Int, workingBits: Int, outputBits: Int,phaseBits: Int, s
         wph(0) := io.ph
       }
     }
+  }.otherwise {
+    aux := 0.U(stageCount.W)
   }
 }

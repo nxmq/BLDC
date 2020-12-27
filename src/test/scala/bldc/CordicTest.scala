@@ -16,33 +16,37 @@ package bldc
 import chisel3._
 import chisel3.iotesters.PeekPokeTester
 import org.scalatest._
+import bldc.util.RotationCordic
 
-class SpaceVectorPWMSpec extends FreeSpec with Matchers {
-  "Initialization works at all" in {
+class CordicSpec extends FlatSpec with Matchers {
+  behavior of "Cordic"
+
+  it should "compute sin and cos properly" in {
     iotesters.Driver.execute(
       args = Array("--backend-name",
-    "verilator",
-    "--generate-vcd-output",
-    "on",
-    "--target-dir",
-    "test_build",
-    "-tn",
-    "test_build",
-    "--no-dce"),
-      dut = () => new SpaceVectorPWM(14)
-    ) { c =>
-      new SpaceVectorPWMTester(c)
-    } should be (true)
+        "verilator",
+        "--generate-vcd-output",
+        "on",
+        "--target-dir",
+        "test_build",
+        "-tn",
+        "test_build",
+        "--no-dce"),dut = () => new RotationCordic(13,18,15 ,20,16)) { c =>
+      new CordicTester(c)
+    } should be(true)
   }
 }
 
-class SpaceVectorPWMTester(c: SpaceVectorPWM) extends PeekPokeTester(c) {
-  poke(c.io.voltage,14189)
-  poke(c.io.phase,196)
-  for(i <- 1 to 5) {
-    step((1 << (c.counterSize + 1)) - 12)
-    poke(c.io.phase,196+c.phaseResolution*i)
-    step(12)
+class CordicTester(c: RotationCordic) extends PeekPokeTester(c) {
+  System.err.print("cordic gain is:")
+  System.err.println(c.getCordicGain.formatted("%f"))
+  poke(c.io.ix, Math.round((1.0/(c.getCordicGain*(1<<(c.inputBits-1))-1))))
+  poke(c.io.iy, 0)
+  poke(c.io.ce, true.B)
+  poke(c.io.iaux, true.B)
+  poke(c.io.ph, 131072)
+  for(i <- 1 to c.stageCount*2) {
+    step(1)
   }
-  step((1 << (c.counterSize + 1)) - 12)
+  expect(c.io.oaux,true.B)
 }

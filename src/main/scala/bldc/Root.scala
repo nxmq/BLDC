@@ -27,11 +27,20 @@ class Root extends Module {
     val hallSwitchV: Bool = Input(Bool())
     val hallSwitchW: Bool = Input(Bool())
 
-    //SPI CONFIG IF INPUTS
-    val spiCfgSCK: Clock = Input(Clock())
-    val spiCfgCIPO: Bool = Input(Bool())
-    val spiCfgCOPI: Bool = Input(Bool())
+    //SPI CONFIG IF PINS
+    val spiCfgClk: Clock = Input(Clock())
+    val spiCfgCipo: Bool = Input(Bool())
+    val spiCfgCopi: Bool = Input(Bool())
     val spiCfgCS: Bool = Input(Bool())
+
+    //ADC CONTROL PINS
+    val adcCS: Bool = Output(Bool())
+    val adcClk: Bool = Output(Bool())
+    val adcDoutA: Bool = Input(Bool())
+    val adcDoutB: Bool = Input(Bool())
+    val adcRange: Bool = Output(Bool())
+    val adcSglDiff: Bool = Output(Bool())
+
 
     // SWITCH OUTPUTS
     val uHighOn: Bool = Output(Bool())
@@ -42,12 +51,40 @@ class Root extends Module {
     val wLowOn: Bool = Output(Bool())
   })
 
+  val adcReadingA: SInt = Reg(SInt(12.W))
+  val adcReadingB: SInt = Reg(SInt(12.W))
+  val quadEncPhase: UInt = Reg(UInt(12.W))
+
+  adcReadingA := (adcReadingA(11,0) ## io.adcDoutA).asSInt()
+  adcReadingB := (adcReadingB(11,0) ## io.adcDoutB).asSInt()
+  io.adcClk := clock.asBool()
+  io.adcCS := true.B
+  io.adcRange := true.B
+  io.adcSglDiff := false.B
+
   val quadEnc: QuadratureEncoder = Module(new QuadratureEncoder(16,20,20))
   quadEnc.io.a := io.quadEncA
   quadEnc.io.b := io.quadEncB
   quadEnc.io.i := io.quadEncI
+  quadEncPhase := quadEnc.io.cnt
+
+
+  val clarkeParkTransform: ClarkeParkTransform = Module(new ClarkeParkTransform(12,11,14))
+  clarkeParkTransform.io.iu := adcReadingA
+  clarkeParkTransform.io.iv := adcReadingB
+  clarkeParkTransform.io.ivalid := true.B
+  clarkeParkTransform.io.phase := quadEncPhase
+
+  val invParkTransform: InverseParkTransform = Module(new InverseParkTransform(12,11,14))
+  invParkTransform.io.ivalid := clarkeParkTransform.io.ovalid
+  invParkTransform.io.vd := clarkeParkTransform.io.id
+  invParkTransform.io.vq := clarkeParkTransform.io.iq
+  invParkTransform.io.motorPhase := quadEncPhase
 
   val spaceVectorPWM: SpaceVectorPWM = Module(new SpaceVectorPWM())
+  spaceVectorPWM.io.ivalid := invParkTransform.io.ovalid
+  spaceVectorPWM.io.voltage := invParkTransform.io.modulationVoltage
+  spaceVectorPWM.io.phase := invParkTransform.io.modulationPhase
   io.uHighOn := spaceVectorPWM.io.uHighOn
   io.uLowOn := spaceVectorPWM.io.uLowOn
   io.vHighOn := spaceVectorPWM.io.vHighOn
