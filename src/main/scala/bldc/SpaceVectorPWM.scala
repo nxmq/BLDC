@@ -1,5 +1,5 @@
 //SPDX-License-Identifier: 0BSD
-//Copyright (c) 2020 Nicolas Machado
+//Copyright (c) 2020-2021 Nicolas Machado
 //
 //Permission to use, copy, modify, and/or distribute this software for any
 //purpose with or without fee is hereby granted.
@@ -14,14 +14,14 @@
 
 package bldc
 
+import bldc.util.SyncROM2R
 import chisel3._
 import chisel3.util._
-import chisel3.util.experimental.loadMemoryFromFile
-import firrtl.annotations.MemoryLoadFileType
 
 class SpaceVectorPWM(val counterSize: Int = 14, val phaseResolution: Int = 8) extends Module {
-  val cntMid: Int = ((1 << counterSize - 1) - 1)
-  val cntMax: Int = ((1 << counterSize) - 1)
+  val cntMid: Int = (1 << (counterSize - 1)) - 1
+  val cntMax: Int = (1 << counterSize) - 1
+  val phMax: Int = (1 << phaseResolution) - 1
 
   val io = IO(new Bundle {
     //DC-LINK NORMALIZED TARGET VOLTAGE (0-cntMax mapped to 0-1)
@@ -42,34 +42,48 @@ class SpaceVectorPWM(val counterSize: Int = 14, val phaseResolution: Int = 8) ex
     val wLowOn: Bool = Output(Bool())
   })
 
-  val phasorMagTableX: Mem[UInt] = Mem(256, UInt(16.W))
-  loadMemoryFromFile(phasorMagTableX, "phasormagx.txt", MemoryLoadFileType.Hex)
-  val phasorMagTableY: Mem[UInt] = Mem(256, UInt(16.W))
-  loadMemoryFromFile(phasorMagTableY, "phasormagy.txt", MemoryLoadFileType.Hex)
+
+
+    def genPhasorTable() = {
+      (0 to phMax).map {
+        v => {
+          val t1 = v * (math.Pi / (3.0 * phMax))
+          BigInt(math.round(cntMax*(math.sqrt(3)/6.0)*(3.0*math.cos(t1)-math.sqrt(3.0)*math.sin(t1))))
+        }
+      }.toVector
+    }
+
+  val phasorMagTable : SyncROM2R = Module(new SyncROM2R("phasorMagTable",genPhasorTable(), Option(counterSize)))
   val counter: UpDownCounter = Module(new UpDownCounter(counterSize))
   val uDuty: UInt = RegInit(cntMax.U(counterSize.W))
   val vDuty: UInt = RegInit(cntMax.U(counterSize.W))
   val wDuty: UInt = RegInit(cntMax.U(counterSize.W))
   val phaseSextant : UInt = Reg(UInt(3.W))
   val phaseLocation: UInt = Reg(UInt(phaseResolution.W))
-  val curMagX: UInt = Reg(UInt(counterSize.W))
-  val curMagY: UInt = Reg(UInt(counterSize.W))
+  val phaseLocationY: UInt = Reg(UInt(phaseResolution.W))
+  val curMagX: UInt = Wire(UInt(counterSize.W))
+  val curMagY: UInt = Wire(UInt(counterSize.W))
   val outputPulses: Vec[UInt] = Reg(Vec(4,UInt(counterSize.W)))
   val valid: Bool = RegInit(false.B)
+  val dx: UInt = Reg(UInt(counterSize.W))
+  val dy: UInt = Reg(UInt(counterSize.W))
   io.ovalid := valid
+  phasorMagTable.io.addrA := phaseLocation
+  phasorMagTable.io.addrB := phaseLocationY
+  curMagX := phasorMagTable.io.dataA
+  curMagY := phasorMagTable.io.dataB
   when(io.ivalid) {
     when(counter.io.cnt === 0.U) {
       valid := false.B
       phaseLocation := io.phase(phaseResolution - 1, 0)
+      phaseLocationY := phMax.U(phaseResolution.W) -& io.phase(phaseResolution - 1, 0)
       phaseSextant := io.phase(phaseResolution + 2, phaseResolution)
     }
-    when(counter.io.cnt === 1.U && counter.io.dir) {
-      curMagX := phasorMagTableX(phaseLocation)
-      curMagY := phasorMagTableY(phaseLocation)
-    }
     when(counter.io.cnt === 2.U && counter.io.dir) {
-      val dx = (curMagX * io.voltage) (counterSize * 2 - 1, counterSize)
-      val dy = (curMagY * io.voltage) (counterSize * 2 - 1, counterSize)
+      dx := (curMagX * io.voltage) (counterSize * 2 - 1, counterSize)
+      dy := (curMagY * io.voltage) (counterSize * 2 - 1, counterSize)
+    }
+    when(counter.io.cnt === 3.U && counter.io.dir) {
       outputPulses(0) := (cntMax.U((counterSize + 1).W) - dx - dy) >> 1
       outputPulses(1) := (cntMax.U((counterSize + 1).W) + dx + dy) >> 1
       outputPulses(2) := (cntMax.U((counterSize + 1).W) - dx + dy) >> 1

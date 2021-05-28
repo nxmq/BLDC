@@ -30,7 +30,7 @@ name := "BLDC"
 
 version := "1.0.0"
 
-scalaVersion := "2.12.12"
+scalaVersion := "2.12.13"
 
 resolvers ++= Seq(
   Resolver.sonatypeRepo("snapshots"),
@@ -39,7 +39,7 @@ resolvers ++= Seq(
 
 // Provide a managed dependency on X if -DXVersion="" is supplied on the command line.
 val defaultVersions = Map(
-  "chisel3" -> "3.4.+",
+  "chisel3" -> "3.4.3",
   "chisel-iotesters" -> "1.5.+"
   )
 

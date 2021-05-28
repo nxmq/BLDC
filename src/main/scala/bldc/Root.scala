@@ -1,5 +1,5 @@
 //SPDX-License-Identifier: 0BSD
-//Copyright (c) 2020 Nicolas Machado
+//Copyright (c) 2020-2021 Nicolas Machado
 //
 //Permission to use, copy, modify, and/or distribute this software for any
 //purpose with or without fee is hereby granted.
@@ -11,6 +11,7 @@
 //LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 //OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 //PERFORMANCE OF THIS SOFTWARE.
+
 package bldc
 
 import chisel3._
@@ -34,13 +35,10 @@ class Root extends Module {
     val spiCfgCS: Bool = Input(Bool())
 
     //ADC CONTROL PINS
-    val adcCS: Bool = Output(Bool())
-    val adcClk: Bool = Output(Bool())
+    val adcCNVST: Bool = Output(Bool())
+    val adcSck: Bool = Output(Bool())
     val adcDoutA: Bool = Input(Bool())
     val adcDoutB: Bool = Input(Bool())
-    val adcRange: Bool = Output(Bool())
-    val adcSglDiff: Bool = Output(Bool())
-
 
     // SWITCH OUTPUTS
     val uHighOn: Bool = Output(Bool())
@@ -51,40 +49,35 @@ class Root extends Module {
     val wLowOn: Bool = Output(Bool())
   })
 
-  val adcReadingA: SInt = Reg(SInt(12.W))
-  val adcReadingB: SInt = Reg(SInt(12.W))
-  val quadEncPhase: UInt = Reg(UInt(12.W))
-
-  adcReadingA := (adcReadingA(11,0) ## io.adcDoutA).asSInt()
-  adcReadingB := (adcReadingB(11,0) ## io.adcDoutB).asSInt()
-  io.adcClk := clock.asBool()
-  io.adcCS := true.B
-  io.adcRange := true.B
-  io.adcSglDiff := false.B
+  val adcIf :ADCInterface = Module(new ADCInterface(12))
+  adcIf.io.adcDoutA := io.adcDoutA
+  adcIf.io.adcDoutB := io.adcDoutB
+  io.adcSck := adcIf.io.adcSck
+  io.adcCNVST := adcIf.io.adcCNVST
 
   val quadEnc: QuadratureEncoder = Module(new QuadratureEncoder(16,20,20))
   quadEnc.io.a := io.quadEncA
   quadEnc.io.b := io.quadEncB
   quadEnc.io.i := io.quadEncI
-  quadEncPhase := quadEnc.io.cnt
-
 
   val clarkeParkTransform: ClarkeParkTransform = Module(new ClarkeParkTransform(12,11,14))
-  clarkeParkTransform.io.iu := adcReadingA
-  clarkeParkTransform.io.iv := adcReadingB
+  clarkeParkTransform.io.iu := adcIf.io.phaseCurrentU
+  clarkeParkTransform.io.iv := adcIf.io.phaseCurrentV
   clarkeParkTransform.io.ivalid := true.B
-  clarkeParkTransform.io.phase := quadEncPhase
+  clarkeParkTransform.io.phase := quadEnc.io.cnt
 
   val invParkTransform: InverseParkTransform = Module(new InverseParkTransform(12,11,14))
   invParkTransform.io.ivalid := clarkeParkTransform.io.ovalid
   invParkTransform.io.vd := clarkeParkTransform.io.id
   invParkTransform.io.vq := clarkeParkTransform.io.iq
-  invParkTransform.io.motorPhase := quadEncPhase
+  invParkTransform.io.motorPhase := quadEnc.io.cnt
 
   val spaceVectorPWM: SpaceVectorPWM = Module(new SpaceVectorPWM())
   spaceVectorPWM.io.ivalid := invParkTransform.io.ovalid
   spaceVectorPWM.io.voltage := invParkTransform.io.modulationVoltage
   spaceVectorPWM.io.phase := invParkTransform.io.modulationPhase
+  adcIf.io.triggerSample := spaceVectorPWM.io.ovalid
+
   io.uHighOn := spaceVectorPWM.io.uHighOn
   io.uLowOn := spaceVectorPWM.io.uLowOn
   io.vHighOn := spaceVectorPWM.io.vHighOn

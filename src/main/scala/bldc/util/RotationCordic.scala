@@ -1,5 +1,5 @@
 //SPDX-License-Identifier: 0BSD
-//Copyright (c) 2020 Nicolas Machado
+//Copyright (c) 2020-2021 Nicolas Machado
 //
 //Permission to use, copy, modify, and/or distribute this software for any
 //purpose with or without fee is hereby granted.
@@ -11,6 +11,7 @@
 //LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 //OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 //PERFORMANCE OF THIS SOFTWARE.
+
 package bldc.util
 
 import chisel3._
@@ -48,9 +49,9 @@ class RotationCordic(val inputBits: Int, val workingBits: Int, val outputBits: I
   }
 
 
-  val wx: Vec[SInt] = RegInit(VecInit(Seq.fill(stageCount+1)(0.S(workingBits.W))))
-  val wy: Vec[SInt] = RegInit(VecInit(Seq.fill(stageCount+1)(0.S(workingBits.W))))
-  val wph: Vec[UInt] = RegInit(VecInit(Seq.fill(stageCount+1)(0.U(phaseBits.W))))
+  val wx: Vec[SInt] = RegInit(VecInit(Seq.fill(stageCount + 1)(0.S(workingBits.W))))
+  val wy: Vec[SInt] = RegInit(VecInit(Seq.fill(stageCount + 1)(0.S(workingBits.W))))
+  val wph: Vec[UInt] = RegInit(VecInit(Seq.fill(stageCount + 1)(0.U(phaseBits.W))))
   val aux: UInt = RegInit(0.U((stageCount+1).W))
 
   val ex: SInt = WireDefault(0.S(workingBits.W))
@@ -60,15 +61,15 @@ class RotationCordic(val inputBits: Int, val workingBits: Int, val outputBits: I
   val py: SInt = WireDefault(0.S(workingBits.W))
 
   val angleTable: Vec[UInt] = WireDefault(genAngleTable())
-  io.ox := px(workingBits-1,workingBits-outputBits).asSInt()
-  io.oy := py(workingBits-1,workingBits-outputBits).asSInt()
+  io.ox := px(workingBits - 1,workingBits - outputBits).asSInt()
+  io.oy := py(workingBits - 1,workingBits - outputBits).asSInt()
   io.oaux := aux(stageCount)
 
   when(io.ce) {
     ex := Cat(io.ix(inputBits - 1).asSInt(), io.ix, 0.S((workingBits - inputBits - 1).W)).asSInt()
-    ey := Cat(io.iy(inputBits-1).asSInt(), io.iy, 0.S((workingBits-inputBits-1).W)).asSInt()
-    px := wx(stageCount) + Cat(0.S(outputBits.W), wx(stageCount)(workingBits-outputBits).asSInt(), Fill(workingBits-outputBits-1,!wx(stageCount)(workingBits-outputBits)).asSInt()).asSInt()
-    py := wy(stageCount) + Cat(0.S(outputBits.W), wy(stageCount)(workingBits-outputBits).asSInt(), Fill(workingBits-outputBits-1,!wy(stageCount)(workingBits-outputBits)).asSInt()).asSInt()
+    ey := Cat(io.iy(inputBits - 1).asSInt(), io.iy, 0.S((workingBits - inputBits - 1).W)).asSInt()
+    px := wx(stageCount) + Cat(0.S(outputBits.W), wx(stageCount)(workingBits-outputBits).asSInt(), Fill(workingBits - outputBits - 1,!wx(stageCount)(workingBits - outputBits)).asSInt()).asSInt()
+    py := wy(stageCount) + Cat(0.S(outputBits.W), wy(stageCount)(workingBits-outputBits).asSInt(), Fill(workingBits - outputBits - 1,!wy(stageCount)(workingBits - outputBits)).asSInt()).asSInt()
     aux := aux(stageCount-1,0) ## io.iaux
 
     for(i <- 0 until stageCount) {
@@ -83,7 +84,7 @@ class RotationCordic(val inputBits: Int, val workingBits: Int, val outputBits: I
           wph(i+1) := wph(i)
         }.elsewhen(wph(i)(phaseBits-1) === 1.U) {
           wx(i+1) := wx(i) + (wy(i)>>(1+i))
-          wy(i+1) := wy(i) - (wx(i)>>(1+i))
+          wy(i+1) := wy(i) - (wx(i)>>(1+i)  )
           wph(i+1) := wph(i) + angleTable(i)
         }.otherwise {
           wx(i+1) := wx(i) - (wy(i)>>(1+i))

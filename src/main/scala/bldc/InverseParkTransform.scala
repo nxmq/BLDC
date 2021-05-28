@@ -1,5 +1,5 @@
 //SPDX-License-Identifier: 0BSD
-//Copyright (c) 2020 Nicolas Machado
+//Copyright (c) 2020-2021 Nicolas Machado
 //
 //Permission to use, copy, modify, and/or distribute this software for any
 //purpose with or without fee is hereby granted.
@@ -14,7 +14,7 @@
 
 package bldc
 
-import bldc.util.{RotationCordic, VectorCordic}
+import bldc.util.VectorCordic
 import chisel3._
 
 class InverseParkTransform(val inputBits: Int, val phaseBits: Int, val outBits: Int)  extends Module {
@@ -23,25 +23,23 @@ class InverseParkTransform(val inputBits: Int, val phaseBits: Int, val outBits: 
     val vd: SInt = Input(SInt(inputBits.W))
     val motorPhase: UInt = Input(UInt(phaseBits.W))
     val modulationVoltage: UInt = Output(UInt(outBits.W))
-    val modulationPhase: UInt = Output(UInt(outBits.W))
+    val modulationPhase: UInt = Output(UInt(phaseBits.W))
     val ivalid: Bool = Input(Bool())
     val ovalid: Bool = Output(Bool())
   })
-  val rotCordic: RotationCordic = Module(new RotationCordic(inputBits,outBits+2,outBits,phaseBits,outBits))
+  val outVoltage: UInt = Reg(UInt(outBits.W))
+  val outPhase: UInt = Reg(UInt(phaseBits.W))
   val vecCordic: VectorCordic = Module(new VectorCordic(outBits,outBits+2,outBits,outBits,outBits))
-
-  val outscale: Long = Math.round((1.0*((1 << (outBits-1)) - 1))/rotCordic.getCordicGain)
-  rotCordic.io.ce := io.ivalid
-  rotCordic.io.iaux := io.ivalid
-  vecCordic.io.iaux := rotCordic.io.oaux
-  io.ovalid := vecCordic.io.oaux
-  rotCordic.io.ix := io.vd
-  rotCordic.io.iy := io.vq
-  rotCordic.io.ph := io.motorPhase
-  vecCordic.io.ce := rotCordic.io.oaux
-  vecCordic.io.ix := (rotCordic.io.ox * outscale.S(outBits.W)) (2 * outBits - 1, outBits).asSInt()
-  vecCordic.io.iy := (rotCordic.io.oy * outscale.S(outBits.W)) (2 * outBits - 1, outBits).asSInt()
-  io.modulationVoltage := (vecCordic.io.omg.asUInt() * outscale.U(outBits.W)) (2 * outBits - 1, outBits)
-  io.modulationPhase := ((vecCordic.io.oph + vecCordic.io.oph + vecCordic.io.oph) >> 2)
-
+  val outscale: Long = Math.round((1.0*((1 << (outBits-1)) - 1))/vecCordic.getCordicGain)
+  vecCordic.io.ce := io.ivalid
+  vecCordic.io.iaux := io.ivalid
+  io.ovalid := RegNext(vecCordic.io.oaux)
+  vecCordic.io.ix := io.vd
+  vecCordic.io.iy := io.vq
+  when(vecCordic.io.oaux) {
+    outPhase := (((vecCordic.io.oph + (vecCordic.io.oph << 1)) >> 2) + io.motorPhase)
+    outVoltage := (vecCordic.io.omg.asUInt() * outscale.U(outBits.W)) (2 * outBits - 1, outBits)
+  }
+  io.modulationVoltage := outVoltage
+  io.modulationPhase := outPhase
 }

@@ -25,6 +25,7 @@ class QuadratureEncoder(counterSize: Int, edgeDebounceClocks: Int, indexDebounce
     val cnt: UInt = Output(UInt(counterSize.W))
     val dir: Bool = Output(Bool())
   })
+
   val aPrev: Bool = Reg(Bool())
   val aNew: Vec[Bool] = Reg(Vec(2,Bool()))
   val bPrev: Bool = Reg(Bool())

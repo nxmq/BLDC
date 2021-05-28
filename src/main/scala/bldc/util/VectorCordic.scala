@@ -30,7 +30,7 @@ class VectorCordic(val inputBits: Int, val workingBits: Int, val magBits: Int, v
   def getCordicGain: Double = {
     var gain = 1.0
     for(k <- 0 until stageCount) {
-      var dgain = .0
+      var dgain = 0.0
       dgain = 1.0 + Math.pow(2.0, -2.0 * (k + 1))
       dgain = Math.sqrt(dgain)
       gain = gain * dgain
@@ -63,9 +63,9 @@ class VectorCordic(val inputBits: Int, val workingBits: Int, val magBits: Int, v
   io.oaux := aux(stageCount)
 
   when(io.ce) {
-    ex := Cat(io.ix(inputBits-1).asSInt(), io.ix, 0.S((workingBits-inputBits-1).W)).asSInt()
-    ey := Cat(io.iy(inputBits-1).asSInt(), io.iy, 0.S((workingBits-inputBits-1).W)).asSInt()
-    pmg := wx(stageCount) + Cat(0.S(magBits.W), wx(stageCount)(workingBits-magBits).asSInt(), Fill(workingBits-magBits-1,!wx(stageCount)(workingBits-magBits)).asSInt()).asSInt()
+    ex := Cat(io.ix(inputBits - 1).asSInt(), io.ix, 0.S((workingBits-inputBits - 1).W)).asSInt()
+    ey := Cat(io.iy(inputBits - 1).asSInt(), io.iy, 0.S((workingBits-inputBits - 1).W)).asSInt()
+    pmg := wx(stageCount) + Cat(0.S(magBits.W), wx(stageCount)(workingBits - magBits).asSInt(), Fill(workingBits - magBits - 1,!wx(stageCount)(workingBits - magBits)).asSInt()).asSInt()
     aux := aux(stageCount-1,0) ## io.iaux
 
     for(i <- 0 until stageCount) {
@@ -90,26 +90,26 @@ class VectorCordic(val inputBits: Int, val workingBits: Int, val magBits: Int, v
       }
     }
 
-    switch(io.ix(inputBits-1) ## io.iy(inputBits-1)){
+    switch(io.ix(inputBits - 1) ## io.iy(inputBits - 1)){
       is(0.U) {
         wx(0) := ex + ey
         wy(0) := ey - ex
-        wph(0) := (1 << (phaseBits-3)).U
+        wph(0) := (1 << (phaseBits - 3)).U
       }
       is(1.U) {
         wx(0) := ex - ey
         wy(0) := ex + ey
-        wph(0) := (7 << (phaseBits-3)).U
+        wph(0) := (7 << (phaseBits - 3)).U
       }
       is(2.U) {
         wx(0) := ey - ex
         wy(0) := -ex - ey
-        wph(0) := (3 << (phaseBits-3)).U
+        wph(0) := (3 << (phaseBits - 3)).U
       }
       is(3.U) {
         wx(0) := -ex - ey
         wy(0) := ex - ey
-        wph(0) := (5 << (phaseBits-3)).U
+        wph(0) := (5 << (phaseBits - 3)).U
       }
     }
   }.otherwise {

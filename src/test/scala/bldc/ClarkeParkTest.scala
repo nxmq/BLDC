@@ -38,10 +38,6 @@ class ClarkeParkSpec extends FlatSpec with Matchers {
 }
 
 class ClarkeParkTester(c: ClarkeParkTransform) extends PeekPokeTester(c) {
-  System.err.print("cordic gain correction factor is: ")
-  System.err.println(c.outscale)
-  System.err.print("input scaling factor is: ")
-  System.err.println(c.inscale)
   poke(c.io.iu,531)
   poke(c.io.iv,126)
   poke(c.io.phase,1202)
